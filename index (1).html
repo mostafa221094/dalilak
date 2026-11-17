@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<title>دليلك - ملاحة بالمصري</title>
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22%D8%AF%D9%84%D9%8A%D9%84%D9%83%22%2C%22short_name%22%3A%22%D8%AF%D9%84%D9%8A%D9%84%D9%83%22%2C%22display%22%3A%22standalone%22%2C%22start_url%22%3A%22.%22%2C%22background_color%22%3A%22%230f172a%22%2C%22theme_color%22%3A%22%230f172a%22%7D">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;700;800&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root { --bg:#0f172a; --card:#111827ee; --acc:#22c55e; --blue:#2563eb; --txt:#f8fafc; --mut:#94a3b8; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); font-family:'Cairo',system-ui,sans-serif; overflow:hidden; }
+  #map { position:fixed; inset:0; }
+  button { font-family:inherit; font-weight:700; border:0; border-radius:14px; cursor:pointer; color:var(--txt); }
+  .hidden { display:none !important; }
+
+  /* Top instruction banner */
+  #banner { position:fixed; top:10px; left:10px; right:10px; z-index:5; background:#065f46; border-radius:20px; padding:12px 14px; display:flex; gap:12px; align-items:center; box-shadow:0 8px 24px #0008; }
+  #arrow { width:72px; height:72px; flex:0 0 72px; display:flex; align-items:center; justify-content:center; background:#0004; border-radius:16px; }
+  #arrow svg { width:56px; height:56px; transition:transform .3s; }
+  #bText { font-size:26px; font-weight:800; line-height:1.3; }
+  #bDist { font-size:30px; font-weight:800; color:#bbf7d0; line-height:1.2; }
+  #bThen { font-size:16px; color:#d1fae5; margin-top:2px; }
+
+  /* Bottom panel */
+  #panel { position:fixed; bottom:0; left:0; right:0; z-index:5; background:var(--card); backdrop-filter:blur(8px); border-radius:22px 22px 0 0; padding:14px 14px calc(14px + env(safe-area-inset-bottom)); box-shadow:0 -8px 24px #0008; }
+  .row { display:flex; gap:8px; }
+  input#q { flex:1; font-family:inherit; font-size:18px; padding:12px 14px; border-radius:14px; border:2px solid #334155; background:#0b1220; color:var(--txt); }
+  .btn { padding:12px 16px; font-size:17px; background:#1e293b; }
+  .btn.g { background:var(--acc); color:#052e16; }
+  .btn.b { background:var(--blue); }
+  .btn.r { background:#b91c1c; }
+  .btn.big { flex:1; font-size:20px; padding:14px; }
+  #results { max-height:38vh; overflow:auto; margin-top:8px; }
+  .res { padding:10px 12px; border-bottom:1px solid #1f2937; cursor:pointer; }
+  .res b { display:block; font-size:17px; }
+  .res span { font-size:13px; color:var(--mut); }
+  #status { font-size:14px; color:var(--mut); margin:6px 2px 0; min-height:20px; }
+  #summary { font-size:18px; margin-bottom:10px; }
+  #navInfo { display:flex; justify-content:space-between; align-items:center; font-size:19px; margin-bottom:10px; }
+  #navInfo .mut { color:var(--mut); font-size:14px; }
+
+  /* Side floating buttons */
+  #fabs { position:fixed; left:10px; z-index:4; display:flex; flex-direction:column; gap:8px; top:50%; transform:translateY(-50%); }
+  .fab { width:54px; height:54px; border-radius:50%; background:#0f172add; font-size:13px; box-shadow:0 4px 12px #0007; display:flex; align-items:center; justify-content:center; text-align:center; line-height:1.1; }
+  .fab.on { background:var(--blue); }
+
+  #toast { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:9; background:#000d; padding:14px 20px; border-radius:14px; font-size:18px; max-width:85vw; text-align:center; }
+
+  /* Settings sheet */
+  #settings { position:fixed; inset:0; z-index:10; background:#000a; display:flex; align-items:flex-end; }
+  #settings .sheet { background:#0f172a; width:100%; padding:18px; border-radius:22px 22px 0 0; }
+  #settings label { display:block; margin:10px 0 4px; color:var(--mut); }
+  #settings select { width:100%; font-family:inherit; font-size:16px; padding:10px; border-radius:12px; background:#1e293b; color:var(--txt); border:0; }
+  .user-dot { width:26px; height:26px; }
+  .maplibregl-ctrl-attrib { font-size:10px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="banner" class="hidden">
+  <div id="arrow"></div>
+  <div style="flex:1;min-width:0">
+    <div id="bText"></div>
+    <div id="bDist"></div>
+    <div id="bThen"></div>
+  </div>
+</div>
+
+<div id="fabs">
+  <button class="fab" id="fSat">قمر<br>صناعي</button>
+  <button class="fab" id="fPeek" title="شوف الدخلة">شوف<br>الدخلة</button>
+  <button class="fab" id="fRecenter">رجّع<br>الكاميرا</button>
+  <button class="fab" id="fMute">الصوت<br>شغال</button>
+  <button class="fab" id="fSet">ضبط</button>
+</div>
+
+<div id="panel">
+  <!-- search view -->
+  <div id="vSearch">
+    <form class="row" id="qForm">
+      <input id="q" placeholder="رايح فين؟" autocomplete="off" enterkeyhint="search">
+      <button class="btn b" type="submit">دوّر</button>
+    </form>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="bPick" style="flex:1">اختار المكان من الخريطة</button>
+    </div>
+    <div id="results"></div>
+  </div>
+  <!-- route preview -->
+  <div id="vRoute" class="hidden">
+    <div id="summary"></div>
+    <div class="row">
+      <button class="btn g big" id="bGo">يلا نبدأ</button>
+      <button class="btn" id="bSim">تجربة<br>من مكاني</button>
+      <button class="btn r" id="bCancel">إلغاء</button>
+    </div>
+  </div>
+  <!-- navigating -->
+  <div id="vNav" class="hidden">
+    <div id="navInfo"><div id="remain"></div><div class="mut" id="eta"></div></div>
+    <div class="row"><button class="btn r big" id="bStop">إنهاء الرحلة</button></div>
+  </div>
+  <div id="status">بستنى مكانك من الـ GPS…</div>
+</div>
+
+<div id="settings" class="hidden">
+  <div class="sheet">
+    <div style="font-size:20px;font-weight:800">الضبط</div>
+    <label>صوت الكلام</label>
+    <select id="voiceSel"></select>
+    <label>سرعة الكلام</label>
+    <select id="rateSel">
+      <option value="0.9">هادي</option>
+      <option value="1" selected>عادي</option>
+      <option value="1.15">سريع</option>
+    </select>
+    <div class="row" style="margin-top:14px">
+      <button class="btn b big" id="bTest">جرّب الصوت</button>
+      <button class="btn big" id="bClose">تمام</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script>
+// ===== Core navigation logic (pure functions, no DOM) =====
+const NAV = (() => {
+  const toR = Math.PI / 180;
+
+  function dist(a, b) { // a,b = [lon, lat] -> meters
+    const dLat = (b[1] - a[1]) * toR, dLon = (b[0] - a[0]) * toR;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * toR) * Math.cos(b[1] * toR) * Math.sin(dLon / 2) ** 2;
+    return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+
+  function bearing(a, b) {
+    const y = Math.sin((b[0] - a[0]) * toR) * Math.cos(b[1] * toR);
+    const x = Math.cos(a[1] * toR) * Math.sin(b[1] * toR) - Math.sin(a[1] * toR) * Math.cos(b[1] * toR) * Math.cos((b[0] - a[0]) * toR);
+    return (Math.atan2(y, x) / toR + 360) % 360;
+  }
+
+  function projSeg(p, a, b) {
+    const kx = Math.cos(p[1] * toR) * 111320, ky = 110540;
+    const ax = (a[0] - p[0]) * kx, ay = (a[1] - p[1]) * ky;
+    const bx = (b[0] - p[0]) * kx, by = (b[1] - p[1]) * ky;
+    const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+    let t = L ? -(ax * dx + ay * dy) / L : 0;
+    t = Math.max(0, Math.min(1, t));
+    return { t, d: Math.hypot(ax + t * dx, ay + t * dy) };
+  }
+
+  const isBridge = (name) => /كوبري|كبري|كوبرى|كبرى|bridge|flyover/i.test(name || '');
+
+  function sideOf(mod) {
+    if (!mod) return null;
+    if (mod.includes('right')) return 'right';
+    if (mod.includes('left')) return 'left';
+    return null;
+  }
+
+  // Build an internal route model from an OSRM route object
+  function buildRoute(route) {
+    const steps = route.legs.flatMap(l => l.steps);
+    const coords = [];
+    const model = [];
+    for (const s of steps) {
+      const g = s.geometry.coordinates;
+      let start;
+      if (coords.length && g.length && dist(coords[coords.length - 1], g[0]) < 0.5) {
+        start = coords.length - 1;
+        for (let i = 1; i < g.length; i++) coords.push(g[i]);
+      } else {
+        start = coords.length;
+        for (const c of g) coords.push(c);
+      }
+      model.push({ raw: s, startIdx: start, endIdx: coords.length - 1 });
+    }
+    const cum = [0];
+    for (let i = 1; i < coords.length; i++) cum.push(cum[i - 1] + dist(coords[i - 1], coords[i]));
+
+    // locate a point along route, searching only within [i0, i1]
+    function alongOf(pt, i0, i1) {
+      let best = { d: Infinity, along: cum[i0] };
+      for (let i = Math.max(0, i0); i < Math.min(coords.length - 1, i1); i++) {
+        const r = projSeg(pt, coords[i], coords[i + 1]);
+        if (r.d < best.d) best = { d: r.d, along: cum[i] + r.t * (cum[i + 1] - cum[i]) };
+      }
+      return best.along;
+    }
+
+    model.forEach((m, k) => {
+      const s = m.raw;
+      m.along = cum[m.startIdx];
+      m.type = s.maneuver.type;
+      m.mod = s.maneuver.modifier || '';
+      m.name = s.name || '';
+      m.ref = s.ref || '';
+      m.exit = s.maneuver.exit;
+      m.loc = s.maneuver.location;
+      m.bearingAfter = s.maneuver.bearing_after;
+      m.bearingBefore = s.maneuver.bearing_before;
+      // side openings along this step (excluding its own maneuver point)
+      m.openings = [];
+      (s.intersections || []).forEach((ix, j) => {
+        if (j === 0) return;
+        const travel = ix.in != null ? (ix.bearings[ix.in] + 180) % 360 : (ix.bearings[ix.out] || 0);
+        let right = false, left = false;
+        ix.bearings.forEach((b, bi) => {
+          if (bi === ix.in || bi === ix.out) return;
+          if (ix.entry && !ix.entry[bi]) return;
+          const dlt = (b - travel + 360) % 360;
+          if (dlt > 25 && dlt < 155) right = true;
+          if (dlt > 205 && dlt < 335) left = true;
+        });
+        if (right || left) {
+          m.openings.push({ along: alongOf(ix.location, m.startIdx, m.endIdx + 1), right, left, loc: ix.location });
+        }
+      });
+    });
+
+    model.forEach((m, k) => {
+      const prev = model[k - 1];
+      m.prevName = prev ? prev.name : '';
+      m.side = sideOf(m.mod);
+      // openings on the same side between previous maneuver and this one
+      m.sameSideBefore = prev && m.side && ['turn', 'end of road', 'continue', 'new name'].includes(m.type)
+        ? prev.openings.filter(o => o[m.side] && o.along < m.along - 8) : [];
+    });
+
+    return { coords, cum, steps: model, total: cum[cum.length - 1], duration: route.duration };
+  }
+
+  // Project user position onto route near hint index
+  function locate(R, pt, hint = 0) {
+    let best = { d: Infinity, i: hint, t: 0 };
+    const lo = Math.max(0, hint - 10), hi = Math.min(R.coords.length - 1, hint + 400);
+    const scan = (a, b) => {
+      for (let i = a; i < b; i++) {
+        const r = projSeg(pt, R.coords[i], R.coords[i + 1]);
+        if (r.d < best.d) best = { d: r.d, i, t: r.t };
+      }
+    };
+    scan(lo, hi);
+    if (best.d > 60) scan(0, R.coords.length - 1); // full rescan if lost
+    const a = R.coords[best.i], b = R.coords[best.i + 1] || a;
+    return {
+      offset: best.d,
+      idx: best.i,
+      along: R.cum[best.i] + best.t * ((R.cum[best.i + 1] ?? R.cum[best.i]) - R.cum[best.i]),
+      snapped: [a[0] + (b[0] - a[0]) * best.t, a[1] + (b[1] - a[1]) * best.t],
+      heading: bearing(a, b),
+    };
+  }
+
+  // ---------- Egyptian Arabic phrasing ----------
+  const ORD = ['أول', 'تاني', 'تالت', 'رابع'];
+  const ORD_F = ['أول', 'تاني', 'تالت', 'رابع']; // same in colloquial
+  const sideWord = (s) => (s === 'right' ? 'يمين' : 'شمال');
+  const exitWord = (n) => ['أول', 'تاني', 'تالت', 'رابع', 'خامس', 'سادس'][n - 1] || ('رقم ' + n);
+
+  function dirPhrase(mod) {
+    switch (mod) {
+      case 'right': return 'خد يمين';
+      case 'left': return 'خد شمال';
+      case 'slight right': return 'خليك يمين';
+      case 'slight left': return 'خليك شمال';
+      case 'sharp right': return 'اكسر يمين على الآخر';
+      case 'sharp left': return 'اكسر شمال على الآخر';
+      case 'uturn': return 'اعمل يو تيرن وارجع';
+      case 'straight': return 'كمّل على طول';
+      default: return 'كمّل';
+    }
+  }
+
+  // Should this step be announced at all?
+  function isSilent(m) {
+    if (m.type === 'depart') return false;
+    const bridgeIn = isBridge(m.name) && !isBridge(m.prevName);
+    const bridgeOut = !isBridge(m.name) && isBridge(m.prevName);
+    if ((m.type === 'new name' || m.type === 'continue') && (m.mod === 'straight' || !m.mod) && !bridgeIn && !bridgeOut) return true;
+    if (m.type === 'notification' || m.type === 'exit roundabout' || m.type === 'exit rotary') return true;
+    return false;
+  }
+
+  // Core instruction text (without distance prefix)
+  function phrase(m, ordinal) {
+    const bridgeIn = isBridge(m.name) && !isBridge(m.prevName);
+    const bridgeOut = !isBridge(m.name) && isBridge(m.prevName);
+    const sw = m.side ? sideWord(m.side) : '';
+    switch (m.type) {
+      case 'depart': return 'يلا بينا، امشي على طول';
+      case 'arrive':
+        if (m.side) return 'وصلت، المكان على إيدك ال' + sw;
+        return 'وصلت بالسلامة';
+      case 'roundabout': case 'rotary':
+        if (m.exit) return 'لف الصنية وخد ' + exitWord(m.exit) + ' طلعة';
+        return 'لف الصنية';
+      case 'roundabout turn':
+        return 'في الصنية ' + dirPhrase(m.mod);
+      case 'on ramp':
+        if (bridgeIn) return 'اطلع الكوبري' + (sw ? ' اللي على ال' + sw : '');
+        return 'خد المطلع' + (sw ? ' اللي على ال' + sw : '');
+      case 'off ramp':
+        if (bridgeOut) return 'انزل من الكوبري' + (sw ? ' من المنزل اللي على ال' + sw : '');
+        return 'خد المنزل' + (sw ? ' اللي على ال' + sw : '');
+      case 'fork':
+        if (bridgeIn) return 'عند التفريعة خليك ' + sw + ' واطلع الكوبري';
+        if (bridgeOut) return 'عند التفريعة خليك ' + sw + ' وانزل من الكوبري';
+        if (isBridge(m.prevName) && isBridge(m.name)) return 'عند التفريعة خليك ' + sw + ' وفضل فوق الكوبري';
+        return 'عند التفريعة خليك ' + (sw || 'على طول');
+      case 'merge':
+        return 'ادخل في الطريق' + (sw ? ' من ال' + sw : '') + ' وخلي بالك من العربيات';
+      case 'end of road':
+        return 'في آخر الشارع ' + dirPhrase(m.mod);
+      case 'new name': case 'continue':
+        if (bridgeIn) return (m.mod && m.mod !== 'straight' ? dirPhrase(m.mod) + ' و' : '') + 'اطلع الكوبري';
+        if (bridgeOut) return 'انزل من الكوبري' + (m.mod && m.mod !== 'straight' ? ' و' + dirPhrase(m.mod) : '');
+        if (m.mod === 'uturn') return dirPhrase('uturn');
+        return dirPhrase(m.mod);
+      case 'turn':
+      default: {
+        if (m.mod === 'uturn') return dirPhrase('uturn');
+        if (bridgeIn) return dirPhrase(m.mod) + ' واطلع الكوبري';
+        if (ordinal && m.side && (m.mod === 'right' || m.mod === 'left' || m.mod === 'sharp right' || m.mod === 'sharp left'))
+          return 'خد ' + ORD[ordinal - 1] + ' ' + sw;
+        return dirPhrase(m.mod);
+      }
+    }
+  }
+
+  function arrowFor(m) {
+    if (m.type === 'arrive') return 'arrive';
+    if (m.type === 'roundabout' || m.type === 'rotary') return 'round';
+    if (m.mod === 'uturn') return 'uturn';
+    const map = { 'straight': 0, 'slight right': 40, 'right': 90, 'sharp right': 135, 'slight left': -40, 'left': -90, 'sharp left': -135 };
+    return map[m.mod] ?? 0;
+  }
+
+  // remaining same-side openings between user and the maneuver
+  function ordinalFor(m, userAlong) {
+    if (!m.sameSideBefore || !m.sameSideBefore.length) return 1;
+    const ahead = m.sameSideBefore.filter(o => o.along > userAlong + 8);
+    return ahead.length + 1;
+  }
+
+  function distWords(d) {
+    if (d < 30) return 'دلوقتي';
+    if (d >= 950) {
+      const km = Math.round(d / 500) / 2;
+      if (km === 1) return 'بعد كيلو';
+      if (km === 1.5) return 'بعد كيلو ونص';
+      if (km === 2) return 'بعد 2 كيلو';
+      return 'بعد ' + km + ' كيلو';
+    }
+    const r = d > 300 ? Math.round(d / 100) * 100 : Math.round(d / 50) * 50;
+    return 'بعد ' + Math.max(50, r) + ' متر';
+  }
+
+  // ---------- Pronunciation: add tashkeel so the phone voice reads Egyptian correctly ----------
+  const SAY = {
+    'خد': 'خُدْ', 'يمين': 'يِمِين', 'اليمين': 'الْيِمِين', 'شمال': 'شِمَال', 'الشمال': 'الشِّمَال',
+    'خليك': 'خَلِّيكْ', 'خلي': 'خَلِّي', 'بالك': 'بَالَكْ', 'كمّل': 'كَمِّلْ', 'كمل': 'كَمِّلْ', 'كمل،': 'كَمِّلْ',
+    'على': 'عَلَى', 'طول': 'طُولْ', 'اكسر': 'اِكْسَرْ', 'الآخر': 'الآخِرْ', 'اعمل': 'اِعْمِلْ', 'يو': 'يُو', 'تيرن': 'تِيرْن',
+    'وارجع': 'وِارْجَعْ', 'اطلع': 'اِطْلَعْ', 'الكوبري': 'الْكُوبْرِي', 'انزل': 'اِنْزِلْ', 'من': 'مِنْ',
+    'المطلع': 'الْمَطْلَعْ', 'المنزل': 'الْمَنْزَلْ', 'اللي': 'اِللِّي', 'لف': 'لِفّ', 'الصنية': 'الصِّينِيَّة',
+    'طلعة': 'طَلْعَة', 'أول': 'أَوِّلْ', 'تاني': 'تَانِي', 'تالت': 'تَالِتْ', 'رابع': 'رَابِعْ', 'خامس': 'خَامِسْ',
+    'دلوقتي': 'دِلْوَقْتِي', 'بعد': 'بَعْد', 'متر': 'مِتْر', 'كيلو': 'كِيلُو', 'ونص': 'وِنُصّ',
+    'وبعدها': 'وِبَعْدَهَا', 'بعدها': 'بَعْدَهَا', 'مش': 'مِشْ', 'الدخلة': 'الدُّخْلَة', 'دي': 'دِي', 'دي،': 'دِي،',
+    'هنا': 'هِنَا', 'هنا،': 'هِنَا،', 'وصلت': 'وِصِلْتْ', 'وصلت،': 'وِصِلْتْ،', 'بالسلامة': 'بِالسَّلَامَة', 'المكان': 'الْمَكَانْ',
+    'إيدك': 'إِيدَكْ', 'عند': 'عَنْد', 'التفريعة': 'التَّفْرِيعَة', 'وفضل': 'وِفْضَلْ', 'فوق': 'فُوقْ',
+    'ادخل': 'اُدْخُلْ', 'في': 'فِي', 'الطريق': 'الطَّرِيقْ', 'وخلي': 'وِخَلِّي', 'العربيات': 'الْعَرَبِيَّاتْ',
+    'آخر': 'آخِرْ', 'الشارع': 'الشَّارِعْ', 'يلا': 'يَلَّا', 'بينا': 'بِينَا', 'بينا،': 'بِينَا،', 'امشي': 'اِمْشِي',
+    'خرجت': 'خَرَجْتْ', 'بحسبلك': 'بَحْسِبْلَكْ', 'طريق': 'طَرِيقْ', 'لسه': 'لِسَّه', 'واطلع': 'وِاطْلَعْ',
+    'وانزل': 'وِانْزِلْ', 'ال': 'الْ', 'خلصنا': 'خَلَّصْنَا', 'تمام،': 'تَمَامْ،', 'هنجرب': 'هَنْجَرَّبْ', 'ما': 'مَا', 'تتحرك': 'تِتْحَرَّكْ',
+    'غير': 'غِيرْ', 'المخرج': 'الْمَخْرَجْ',
+  };
+  function speakify(text) {
+    return text.split(/(\s+|،|\.)/).map(tok => {
+      if (SAY[tok]) return SAY[tok];
+      if (tok.length > 2 && tok[0] === 'و' && SAY[tok.slice(1)]) return 'وِ' + SAY[tok.slice(1)];
+      return tok;
+    }).join('');
+  }
+
+  return { speakify, dist, bearing, buildRoute, locate, phrase, isSilent, arrowFor, ordinalFor, distWords, isBridge, ORD };
+})();
+
+
+</script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const arNum = (n, d = 0) => Number(n).toLocaleString('ar-EG', { maximumFractionDigits: d });
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('dalilak.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('dalilak.' + k, JSON.stringify(v)); } catch {} },
+  };
+
+  // ---------------- Map ----------------
+  const CAIRO = [31.2357, 30.0444];
+  // Arabic letters shaping + right-to-left labels
+  try {
+    const p = maplibregl.setRTLTextPlugin('https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.3.0/dist/mapbox-gl-rtl-text.js', false);
+    if (p && p.catch) p.catch(() => {});
+  } catch {}
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: store.get('lastPos', CAIRO),
+    zoom: 15, pitch: 55, maxPitch: 75,
+    attributionControl: { compact: true },
+  });
+
+  let satOn = store.get('sat', false);
+  map.on('load', () => {
+    // satellite imagery layer (below labels)
+    map.addSource('sat', {
+      type: 'raster', tileSize: 256, maxzoom: 19,
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      attribution: 'Imagery © Esri',
+    });
+    // show Arabic names only (fallback to local name)
+    map.getStyle().layers.forEach(l => {
+      if (l.type === 'symbol' && l.layout && /name/.test(JSON.stringify(l.layout['text-field'] || ''))) {
+        try { map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:ar'], ['get', 'name'], ['get', 'name:latin']]); } catch {}
+      }
+    });
+    const firstSymbol = map.getStyle().layers.find(l => l.type === 'symbol');
+    map.addLayer({ id: 'sat', type: 'raster', source: 'sat', layout: { visibility: satOn ? 'visible' : 'none' } }, firstSymbol && firstSymbol.id);
+
+    // make sure 3D buildings exist
+    const hasExtrusion = map.getStyle().layers.some(l => l.type === 'fill-extrusion');
+    if (!hasExtrusion && map.getSource('openmaptiles')) {
+      map.addLayer({
+        id: 'b3d', type: 'fill-extrusion', source: 'openmaptiles', 'source-layer': 'building', minzoom: 14,
+        paint: {
+          'fill-extrusion-color': '#cbd5e1',
+          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 12],
+          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+          'fill-extrusion-opacity': 0.85,
+        },
+      }, firstSymbol && firstSymbol.id);
+    }
+
+    map.addSource('route', { type: 'geojson', data: emptyFC() });
+    map.addLayer({ id: 'route-case', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#1e3a8a', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 7, 18, 22] } });
+    map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#3b82f6', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 18, 15] } });
+    map.addSource('turn', { type: 'geojson', data: emptyFC() });
+    map.addLayer({ id: 'turn', type: 'circle', source: 'turn', paint: { 'circle-radius': 11, 'circle-color': '#facc15', 'circle-stroke-color': '#000', 'circle-stroke-width': 3 } });
+    setSatBtn();
+  });
+  const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
+
+  function setSatBtn() { $('fSat').classList.toggle('on', satOn); }
+  $('fSat').onclick = () => {
+    satOn = !satOn; store.set('sat', satOn);
+    if (map.getLayer('sat')) map.setLayoutProperty('sat', 'visibility', satOn ? 'visible' : 'none');
+    setSatBtn();
+  };
+
+  // user marker
+  const dotEl = document.createElement('div');
+  dotEl.innerHTML = '<svg class="user-dot" viewBox="0 0 26 26"><circle cx="13" cy="13" r="11" fill="#2563eb" stroke="#fff" stroke-width="3"/><path d="M13 5 L18 16 L13 13 L8 16 Z" fill="#fff"/></svg>';
+  const userMarker = new maplibregl.Marker({ element: dotEl, rotationAlignment: 'map', pitchAlignment: 'map' });
+  let destMarker = null;
+
+  // ---------------- Voice ----------------
+  let voices = [], voice = null, muted = false;
+  let rate = store.get('rate', 1);
+  function loadVoices() {
+    voices = (speechSynthesis.getVoices() || []).filter(v => /^ar/i.test(v.lang));
+    const saved = store.get('voice', null);
+    voice = voices.find(v => v.name === saved) || voices.find(v => /ar[-_]EG/i.test(v.lang)) || voices[0] || null;
+    const sel = $('voiceSel');
+    sel.innerHTML = voices.length ? voices.map(v => `<option value="${v.name}">${v.name} (${v.lang})</option>`).join('') : '<option>مفيش صوت عربي على الموبايل</option>';
+    if (voice) sel.value = voice.name;
+  }
+  if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+  $('voiceSel').onchange = (e) => { voice = voices.find(v => v.name === e.target.value) || voice; store.set('voice', voice && voice.name); };
+  $('rateSel').value = String(rate);
+  $('rateSel').onchange = (e) => { rate = +e.target.value; store.set('rate', rate); };
+
+  function say(text, urgent = true) {
+    if (muted || !('speechSynthesis' in window)) return;
+    if (urgent) speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(NAV.speakify(text));
+    u.lang = voice ? voice.lang : 'ar-EG';
+    if (voice) u.voice = voice;
+    u.rate = rate;
+    speechSynthesis.speak(u);
+  }
+  $('fMute').onclick = () => {
+    muted = !muted;
+    $('fMute').innerHTML = muted ? 'الصوت<br>مقفول' : 'الصوت<br>شغال';
+    $('fMute').classList.toggle('on', muted);
+    if (muted) speechSynthesis.cancel();
+  };
+  $('fSet').onclick = () => $('settings').classList.remove('hidden');
+  $('bClose').onclick = () => $('settings').classList.add('hidden');
+  $('bTest').onclick = () => say('بعد 300 متر، اطلع الكوبري اللي على اليمين، وبعدها على طول خد تاني شمال. لف الصنية وخد تالت طلعة. مش الدخلة دي، اللي بعدها');
+
+  function toast(msg, ms = 2500) {
+    const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), ms);
+  }
+  const status = (m) => { $('status').textContent = m; };
+
+  // ---------------- GPS ----------------
+  let pos = null;          // {pt:[lon,lat], heading, speed, acc}
+  let firstFix = true;
+  let gpsWatch = null;
+  function startGPS() {
+    if (!('geolocation' in navigator)) { status('الموبايل ده مش بيدعم تحديد المكان'); return; }
+    gpsWatch = navigator.geolocation.watchPosition(onPos, (err) => {
+      if (err.code === 1) status('لازم تسمح للصفحة تعرف مكانك (Location) من إعدادات كروم');
+      else status('مش لاقي إشارة GPS… اتأكد إن الـ Location شغال');
+    }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+  }
+  let lastRaw = null;
+  function onPos(p) {
+    if (sim) return; // ignore real GPS during simulation
+    const pt = [p.coords.longitude, p.coords.latitude];
+    let speed = p.coords.speed;
+    let heading = p.coords.heading;
+    if (lastRaw) {
+      const dt = (p.timestamp - lastRaw.t) / 1000;
+      const d = NAV.dist(lastRaw.pt, pt);
+      if ((speed == null || isNaN(speed)) && dt > 0) speed = d / dt;
+      if ((heading == null || isNaN(heading)) && d > 3) heading = NAV.bearing(lastRaw.pt, pt);
+    }
+    lastRaw = { pt, t: p.timestamp };
+    handlePos({ pt, heading: heading ?? (pos && pos.heading) ?? 0, speed: speed || 0, acc: p.coords.accuracy });
+  }
+
+  function handlePos(p) {
+    pos = p;
+    store.set('lastPos', p.pt);
+    if (firstFix) {
+      firstFix = false;
+      userMarker.setLngLat(p.pt).addTo(map);
+      map.jumpTo({ center: p.pt, zoom: 16 });
+      if (!R) status('جاهز. اكتب رايح فين.');
+    }
+    if (nav) navTick();
+    else { userMarker.setLngLat(p.pt).setRotation(p.heading || 0); }
+  }
+
+  // ---------------- Search ----------------
+  async function search(q) {
+    const near = pos ? pos.pt : store.get('lastPos', CAIRO);
+    status('بدوّر…');
+    sugSeq++; clearTimeout(sugT);
+    $('results').innerHTML = '';
+    const vb = [near[0] - 0.6, near[1] + 0.6, near[0] + 0.6, near[1] - 0.6].join(',');
+    const nom = fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=eg&accept-language=ar&viewbox=${vb}&q=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(a => a.map(x => ({ name: x.name || x.display_name.split(',')[0], sub: x.display_name, pt: [+x.lon, +x.lat] }))).catch(() => []);
+    const pho = fetch(`https://photon.komoot.io/api/?limit=6&lat=${near[1]}&lon=${near[0]}&q=${encodeURIComponent(q)}`)
+      .then(r => r.json()).then(j => (j.features || []).filter(f => (f.properties.countrycode || '').toUpperCase() === 'EG').map(f => ({
+        name: f.properties.name || f.properties.street || q,
+        sub: [f.properties.street, f.properties.district, f.properties.city].filter(Boolean).join('، '),
+        pt: f.geometry.coordinates,
+      }))).catch(() => []);
+    const [a, b] = await Promise.all([nom, pho]);
+    const all = [];
+    for (const r of [...a, ...b]) if (!all.some(x => NAV.dist(x.pt, r.pt) < 60)) all.push(r);
+    all.forEach(r => r.d = NAV.dist(near, r.pt));
+    all.sort((x, y) => x.d - y.d);
+    if (!all.length) { status('ملقتش المكان ده. جرّب اسم تاني، أو اختاره من الخريطة.'); return; }
+    status('اختار من النتايج:');
+    $('results').innerHTML = all.slice(0, 8).map((r, i) => `<div class="res" data-i="${i}"><b>${esc(r.name)}</b><span>${esc(r.sub || '')}</span><span> — ${arNum(r.d / 1000, 1)} كم</span></div>`).join('');
+    $('results').querySelectorAll('.res').forEach(el => el.onclick = () => setDest(all[+el.dataset.i].pt, all[+el.dataset.i].name));
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // live suggestions while typing (Photon allows type-ahead)
+  let sugT = null, sugSeq = 0;
+  $('q').addEventListener('input', () => {
+    clearTimeout(sugT);
+    const q = $('q').value.trim();
+    if (q.length < 2) { $('results').innerHTML = ''; return; }
+    sugT = setTimeout(async () => {
+      const seq = ++sugSeq;
+      const near = pos ? pos.pt : store.get('lastPos', CAIRO);
+      try {
+        const j = await (await fetch(`https://photon.komoot.io/api/?limit=8&lat=${near[1]}&lon=${near[0]}&location_bias_scale=0.5&q=${encodeURIComponent(q)}`)).json();
+        if (seq !== sugSeq) return;
+        const list = (j.features || []).filter(f => (f.properties.countrycode || '').toUpperCase() === 'EG').map(f => ({
+          name: f.properties.name || f.properties.street || q,
+          sub: [f.properties.street, f.properties.district, f.properties.city].filter(Boolean).join('، '),
+          pt: f.geometry.coordinates,
+        }));
+        list.forEach(r => r.d = NAV.dist(near, r.pt));
+        if (!list.length) return;
+        $('results').innerHTML = list.map((r, i) => `<div class="res" data-i="${i}"><b>${esc(r.name)}</b><span>${esc(r.sub || '')}</span><span> — ${arNum(r.d / 1000, 1)} كم</span></div>`).join('');
+        $('results').querySelectorAll('.res').forEach(el => el.onclick = () => { $('q').blur(); setDest(list[+el.dataset.i].pt, list[+el.dataset.i].name); });
+      } catch {}
+    }, 350);
+  });
+  $('qForm').onsubmit = (e) => { e.preventDefault(); const q = $('q').value.trim(); if (q) { $('q').blur(); search(q); } };
+
+  let picking = false;
+  $('bPick').onclick = () => { picking = true; toast('دوس على المكان اللي رايحه على الخريطة'); };
+  map.on('click', (e) => { if (picking) { picking = false; setDest([e.lngLat.lng, e.lngLat.lat], 'المكان اللي اخترته'); } });
+
+  // ---------------- Routing ----------------
+  let R = null, dest = null, destName = '';
+  async function fetchRoute(from, to, heading) {
+    let url = `https://router.project-osrm.org/route/v1/driving/${from[0]},${from[1]};${to[0]},${to[1]}?overview=false&steps=true&geometries=geojson&alternatives=false`;
+    if (heading != null && !isNaN(heading)) url += `&bearings=${Math.round(heading)},60;`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (j.code !== 'Ok' || !j.routes.length) throw new Error(j.message || 'no route');
+    return NAV.buildRoute(j.routes[0]);
+  }
+
+  function drawRoute() {
+    map.getSource('route').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: R.coords } });
+  }
+
+  async function setDest(pt, name) {
+    if (!pos) { toast('لسه مستني مكانك من الـ GPS'); return; }
+    dest = pt; destName = name;
+    if (destMarker) destMarker.remove();
+    destMarker = new maplibregl.Marker({ color: '#ef4444' }).setLngLat(pt).addTo(map);
+    status('بحسب الطريق…');
+    try {
+      R = await fetchRoute(pos.pt, dest);
+    } catch (e) {
+      status('مقدرتش أحسب طريق. اتأكد من النت وجرّب تاني.'); return;
+    }
+    drawRoute();
+    const b = R.coords.reduce((bb, c) => bb.extend(c), new maplibregl.LngLatBounds(R.coords[0], R.coords[0]));
+    map.fitBounds(b, { padding: { top: 60, bottom: 220, left: 40, right: 40 }, pitch: 0, bearing: 0 });
+    $('summary').innerHTML = `<b>${esc(name)}</b><br>المسافة ${arNum(R.total / 1000, 1)} كم`;
+    show('vRoute');
+    status('');
+  }
+
+  function show(v) { ['vSearch', 'vRoute', 'vNav'].forEach(x => $(x).classList.toggle('hidden', x !== v)); }
+  $('bCancel').onclick = resetAll;
+
+  function resetAll() {
+    stopNav();
+    R = null; dest = null;
+    if (destMarker) { destMarker.remove(); destMarker = null; }
+    if (map.getSource('route')) { map.getSource('route').setData(emptyFC()); map.getSource('turn').setData(emptyFC()); }
+    show('vSearch'); $('results').innerHTML = '';
+    status(pos ? 'جاهز. اكتب رايح فين.' : 'بستنى مكانك من الـ GPS…');
+  }
+
+  // ---------------- Navigation engine ----------------
+  let nav = false, sim = null, follow = true, hint = 0, offCount = 0, rerouting = false;
+  let flags = {}; // per-step announcement flags
+  let wakeLock = null;
+
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (nav && document.visibilityState === 'visible') keepAwake(); });
+
+  function startNav(simulate) {
+    if (!R) return;
+    nav = true; follow = true; hint = 0; offCount = 0; flags = {};
+    show('vNav'); $('banner').classList.remove('hidden');
+    keepAwake();
+    // unlock speech on user gesture
+    say(simulate ? 'تمام، هنجرب الطريق من غير ما تتحرك' : 'يلا بينا. ' + firstCue());
+    if (simulate) startSim();
+    else navTick();
+  }
+  function firstCue() {
+    const s = R.steps[0];
+    return s && s.name ? 'امشي على ' + s.name : 'امشي على طول';
+  }
+  $('bGo').onclick = () => startNav(false);
+  $('bSim').onclick = () => startNav(true);
+  $('bStop').onclick = () => { say('خلصنا', true); resetAll(); };
+
+  function stopNav() {
+    nav = false;
+    if (sim) { clearInterval(sim.timer); sim = null; }
+    $('banner').classList.add('hidden');
+    try { wakeLock && wakeLock.release(); } catch {}
+    wakeLock = null;
+  }
+
+  map.on('dragstart', () => { if (nav) { follow = false; $('fRecenter').classList.add('on'); } });
+  $('fRecenter').onclick = () => { follow = true; $('fRecenter').classList.remove('on'); if (nav) navTick(); else if (pos) map.easeTo({ center: pos.pt, zoom: 16 }); };
+
+  function speedBands(v) {
+    // v in m/s
+    if (v > 16) return { far: 1000, near: 350, now: 90 };  // > ~58 km/h
+    if (v > 9) return { far: 600, near: 220, now: 55 };    // > ~32 km/h
+    return { far: 350, near: 130, now: 35 };
+  }
+
+  function nextStepIdx(along) {
+    for (let k = 1; k < R.steps.length; k++) {
+      const m = R.steps[k];
+      if (m.along > along + 3 && !NAV.isSilent(m)) return k;
+    }
+    return R.steps.length - 1;
+  }
+  function stepAfter(k) {
+    for (let j = k + 1; j < R.steps.length; j++) if (!NAV.isSilent(R.steps[j])) return j;
+    return -1;
+  }
+
+  function arrowSVG(a) {
+    if (a === 'arrive') return '<svg viewBox="0 0 24 24"><path fill="#fff" d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
+    if (a === 'round') return '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="none" stroke="#fff" stroke-width="2.6"/><path fill="#fff" d="M18 4l3 5h-6z"/></svg>';
+    if (a === 'uturn') return '<svg viewBox="0 0 24 24"><path d="M16 21V9a4 4 0 0 0-8 0v4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path fill="#fff" d="M3.5 12h9L8 18.5z"/></svg>';
+    return `<svg viewBox="0 0 24 24" style="transform:rotate(${a}deg)"><path fill="#fff" d="M12 2l7 9h-4.5v11h-5V11H5z"/></svg>`;
+  }
+
+  function fmtDist(d) {
+    if (d >= 1000) return arNum(d / 1000, 1) + ' كم';
+    const r = d > 300 ? Math.round(d / 50) * 50 : Math.round(d / 10) * 10;
+    return arNum(r) + ' متر';
+  }
+
+  async function reroute() {
+    if (rerouting || !dest) return;
+    rerouting = true;
+    say('خرجت من الطريق، بحسبلك طريق تاني');
+    status('بحسب طريق جديد…');
+    try {
+      R = await fetchRoute(pos.pt, dest, pos.speed > 2 ? pos.heading : null);
+      hint = 0; flags = {}; offCount = 0;
+      drawRoute();
+      status('');
+    } catch { status('مفيش نت كفاية لحساب طريق جديد'); }
+    rerouting = false;
+  }
+
+  function navTick() {
+    if (!nav || !pos || !R) return;
+    const L = NAV.locate(R, pos.pt, hint);
+    hint = L.idx;
+    const onRoute = L.offset < 35 || (pos.acc && L.offset < pos.acc * 0.8 && L.offset < 70);
+    if (!onRoute && !sim) {
+      offCount++;
+      if (offCount >= 3) reroute();
+    } else offCount = 0;
+
+    const shown = onRoute ? L.snapped : pos.pt;
+    const heading = onRoute ? L.heading : pos.heading;
+    userMarker.setLngLat(shown).setRotation(heading);
+
+    const along = L.along;
+    const k = nextStepIdx(along);
+    const m = R.steps[k];
+    const d = Math.max(0, m.along - along);
+    const v = pos.speed || 0;
+    const B = speedBands(v);
+
+    let ord = NAV.ordinalFor(m, along);
+    const useOrd = ord >= 1 && ord <= 3 && m.sameSideBefore && m.sameSideBefore.length > 0 && d < 400;
+    const text = NAV.phrase(m, useOrd ? ord : null);
+
+    // banner
+    $('arrow').innerHTML = arrowSVG(NAV.arrowFor(m));
+    $('bText').textContent = text;
+    $('bDist').textContent = fmtDist(d);
+    const k2 = stepAfter(k);
+    const thenClose = k2 > 0 && (R.steps[k2].along - m.along) < 150;
+    $('bThen').textContent = thenClose ? 'وبعدها على طول: ' + NAV.phrase(R.steps[k2], null) : '';
+    $('banner').style.background = d < B.now * 1.5 ? '#b45309' : '#065f46';
+    map.getSource('turn').setData({ type: 'Feature', geometry: { type: 'Point', coordinates: m.loc } });
+
+    // remaining
+    const rem = Math.max(0, R.total - along);
+    $('remain').textContent = 'فاضل ' + fmtDist(rem);
+    const mins = Math.max(1, Math.round((R.duration * (rem / R.total)) / 60 * 1.3));
+    $('eta').textContent = 'حوالي ' + arNum(mins) + ' دقيقة';
+
+    // ---- voice ----
+    const f = flags[k] || (flags[k] = {});
+    const thenTxt = thenClose ? '، وبعدها على طول ' + NAV.phrase(R.steps[k2], null) : '';
+
+    if (m.type === 'arrive' && d < 25) {
+      if (!f.done) { f.done = true; say(NAV.phrase(m)); setTimeout(() => { if (nav) { stopNav(); show('vRoute'); $('summary').innerHTML = '<b>وصلت بالسلامة</b>'; } }, 3000); }
+    } else if (!f.now && d <= B.now) {
+      f.now = f.near = f.far = true;
+      say((m.type === 'turn' || m.type === 'end of road' ? 'هنا، ' : '') + text + thenTxt);
+    } else if (!f.near && d <= B.near && d > B.now) {
+      f.near = f.far = true;
+      say((useOrd ? '' : NAV.distWords(d) + '، ') + text + thenTxt);
+    } else if (!f.far && d <= B.far && d > B.near + 60 && (m.along - (R.steps[k - 1] ? R.steps[k - 1].along : 0)) > B.near + 100) {
+      f.far = true;
+      say(NAV.distWords(d) + '، ' + NAV.phrase(m, null));
+    }
+
+    // "not this one, the next" warning
+    if (useOrd && ord >= 2 && d > B.now && m.sameSideBefore) {
+      const o = m.sameSideBefore.find(o => o.along > along + 5);
+      if (o && o.along - along < Math.max(35, v * 3) && !o.warned) {
+        o.warned = true;
+        say(ord === 2 ? 'مش الدخلة دي، اللي بعدها' : 'مش الدخلة دي، لسه', true);
+      }
+    }
+
+    // camera
+    if (follow) {
+      const zoom = v > 16 ? 16.3 : v > 9 ? 16.9 : 17.4;
+      map.easeTo({ center: shown, bearing: heading, pitch: 62, zoom, duration: sim ? 450 : 900, padding: { top: 260, bottom: 120 } });
+    }
+  }
+
+  // junction preview
+  $('fPeek').onclick = () => {
+    if (!R || !nav) { toast('الزرار ده بيشتغل وانت ماشي في رحلة'); return; }
+    const L = NAV.locate(R, pos.pt, hint);
+    const m = R.steps[nextStepIdx(L.along)];
+    follow = false;
+    map.flyTo({ center: m.loc, zoom: 18.2, pitch: 70, bearing: m.bearingBefore || 0, duration: 1500 });
+    toast('دي الدخلة الجاية', 2000);
+    setTimeout(() => { follow = true; $('fRecenter').classList.remove('on'); navTick(); }, 6000);
+  };
+
+  // ---------------- Simulation ----------------
+  function startSim() {
+    const speed = 12; // m/s ≈ 43 km/h
+    let along = 0;
+    sim = {
+      timer: setInterval(() => {
+        along += speed * 0.5;
+        if (along >= R.total) along = R.total;
+        // interpolate position
+        let i = 0;
+        while (i < R.cum.length - 2 && R.cum[i + 1] < along) i++;
+        const a = R.coords[i], b = R.coords[i + 1] || a;
+        const t = (along - R.cum[i]) / ((R.cum[i + 1] - R.cum[i]) || 1);
+        pos = { pt: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], heading: NAV.bearing(a, b), speed, acc: 5 };
+        navTick();
+        if (along >= R.total && sim) { clearInterval(sim.timer); }
+      }, 500),
+    };
+  }
+
+  // ---------------- Boot ----------------
+  if (!window.isSecureContext) status('لازم الصفحة تتفتح من لينك https عشان تعرف مكانك');
+  startGPS();
+})();
+</script>
+</body>
+</html>
